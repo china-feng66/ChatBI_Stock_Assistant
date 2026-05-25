@@ -1,0 +1,8 @@
+qwen-agent>=0.0.9
+pandas
+numpy
+matplotlib
+statsmodels
+plotly
+openpyxl
+prophet
