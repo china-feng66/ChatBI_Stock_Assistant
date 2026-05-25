@@ -876,7 +876,7 @@ def main():
     llm_cfg = {
         'model': 'deepseek-v4-pro',
         'model_server': 'https://api.deepseek.com/v1',
-        'api_key': os.getenv('DEEPSEEK_API_KEY', 'sk-88636fbb132646f4b981e71ac5f6b2a1'),
+        'api_key': os.getenv('DEEPSEEK_API_KEY', 'your-deepseek-apikey'),
     }
 
     system_instruction = '''
