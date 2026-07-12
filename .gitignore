@@ -16,3 +16,6 @@ venv/
 dist/
 build/
 *.egg-info/
+*.jsonl
+tests/.runtime_tmp/
+traces/

@@ -1,10 +1,13 @@
 """Independent portfolio implementation inspired by a ChatBI course baseline."""
 
+__version__ = "0.2.0"
+
 from .backtest import BacktestConfig, BacktestResult, Trade, run_long_only_backtest
 from .query import QueryPolicyError, QueryResult, ReadOnlyQueryService
 from .strategy import generate_macd_targets
 
 __all__ = [
+    "__version__",
     "BacktestConfig",
     "BacktestResult",
     "QueryPolicyError",
