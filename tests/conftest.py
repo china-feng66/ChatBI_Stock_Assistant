@@ -1,17 +1,13 @@
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
 
 @pytest.fixture
 def tmp_path():
-    """Workspace-local replacement for an inaccessible Windows temp root."""
+    """Workspace-local isolated temp root without recursively deleting files."""
 
-    directory = Path(__file__).with_name(".runtime_tmp")
-    directory.mkdir(exist_ok=True)
-    trace_file = directory / "trace.jsonl"
-    trace_file.unlink(missing_ok=True)
-    try:
-        yield directory
-    finally:
-        trace_file.unlink(missing_ok=True)
+    directory = Path(__file__).with_name(".runtime_tmp") / uuid4().hex
+    directory.mkdir(parents=True, exist_ok=False)
+    yield directory

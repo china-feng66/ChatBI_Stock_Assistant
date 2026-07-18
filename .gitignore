@@ -19,3 +19,7 @@ build/
 *.jsonl
 tests/.runtime_tmp/
 traces/
+.runtime/
+frontend/node_modules/
+frontend/dist/
+

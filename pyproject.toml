@@ -4,14 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quantquery-a"
-version = "0.2.0"
-description = "Auditable read-only stock research queries and no-lookahead daily backtests"
+version = "0.3.0"
+description = "Auditable realtime multi-agent A-share research workbench"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+  "aiosqlite>=0.20,<1.0",
   "fastapi>=0.115,<1.0",
+  "langgraph>=1.0,<2.0",
+  "langgraph-checkpoint-sqlite>=3.0,<4.0",
+  "openai>=1.50,<3.0",
   "pandas>=2.0,<3.0",
   "pydantic>=2.4,<3.0",
+  "scikit-learn>=1.4,<2.0",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +27,10 @@ dev = [
 api = [
   "uvicorn>=0.29,<1.0",
 ]
+market = [
+  "akshare>=1.16",
+  "tushare>=1.4",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -30,3 +39,4 @@ where = ["src"]
 addopts = "-p no:cacheprovider"
 testpaths = ["tests"]
 pythonpath = ["src"]
+
