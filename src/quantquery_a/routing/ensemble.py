@@ -31,7 +31,7 @@ def _normalize(values: Mapping[TaskType, float]) -> dict[TaskType, float]:
 
 
 class RuleIntentScorer:
-    """Transparent first-stage scorer; weights are evaluation starting points."""
+    """Transparent finance-domain scorer used as the deterministic fallback."""
 
     name = "keyword_rules"
 
@@ -41,40 +41,72 @@ class RuleIntentScorer:
             ("收盘价", 2.0),
             ("行情", 2.0),
             ("股价", 1.5),
+            ("实时快照", 2.0),
+            ("成交量", 0.8),
             ("market", 1.5),
         ),
         TaskType.STRATEGY_ANALYSIS: (
             ("macd", 2.0),
-            ("策略", 1.5),
+            ("布林", 2.0),
+            ("技术信号", 2.0),
             ("信号", 1.5),
             ("买卖点", 2.0),
+            ("买卖区间", 2.0),
+            ("入场", 1.5),
+            ("离场", 1.5),
         ),
         TaskType.BACKTEST: (
             ("回测", 6.0),
-            ("收益", 1.0),
+            ("历史回测", 4.0),
+            ("历史模拟", 3.0),
+            ("过去一年", 3.0),
+            ("策略收益", 3.0),
+            ("交易成本", 2.0),
+            ("基准", 1.5),
+            ("次日开盘", 1.5),
             ("backtest", 3.0),
         ),
         TaskType.RISK_DIAGNOSIS: (
             ("风险", 2.0),
             ("回撤", 2.0),
-            ("前视", 2.0),
-            ("夏普", 1.0),
+            ("前视", 2.5),
+            ("未来数据", 2.5),
+            ("手续费", 2.0),
+            ("滑点", 2.0),
+            ("复权", 2.0),
+            ("数据来源", 1.5),
+            ("诊断", 1.5),
+            ("复核", 1.5),
+            ("遗漏", 1.5),
         ),
         TaskType.STOCK_COMPARISON: (
             ("比较", 3.0),
             ("对比", 3.0),
             ("哪个", 1.0),
+            ("排序", 2.5),
+            ("因子", 2.5),
+            ("组合", 1.5),
+            ("前五", 2.0),
+            ("top5", 2.0),
+            ("自选池", 2.0),
+            ("动量", 1.5),
+            ("低波动", 1.5),
+            ("流动性", 1.5),
         ),
         TaskType.KNOWLEDGE_EXPLAIN: (
             ("解释", 2.0),
             ("什么是", 2.0),
             ("原理", 2.0),
             ("含义", 1.5),
+            ("说明", 1.0),
         ),
         TaskType.UNSUPPORTED: (
-            ("下单", 2.0),
-            ("保证盈利", 3.0),
-            ("实盘交易", 2.0),
+            ("下单", 4.0),
+            ("实盘账户", 4.0),
+            ("实盘交易", 4.0),
+            ("自动交易", 3.0),
+            ("保证", 3.0),
+            ("盈利", 2.0),
         ),
     }
 

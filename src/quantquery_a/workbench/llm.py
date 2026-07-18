@@ -21,6 +21,10 @@ TASK_LABELS = (
     "unsupported",
 )
 
+JSON_OUTPUT_CONTRACT = (
+    "Return only one valid JSON object. Do not use markdown fences or plain text."
+)
+
 
 @dataclass(frozen=True)
 class LLMUsage:
@@ -48,6 +52,12 @@ class QwenClient(Protocol):
         payload: dict[str, Any],
         max_output_tokens: int,
     ) -> LLMResponse: ...
+
+
+def _structured_system_prompt(system_prompt: str) -> str:
+    """Make the response_format=json_object contract explicit to DashScope."""
+
+    return f"{system_prompt.rstrip()}\n\n{JSON_OUTPUT_CONTRACT}"
 
 
 class DashScopeQwenClient:
@@ -78,6 +88,7 @@ class DashScopeQwenClient:
         payload: dict[str, Any],
         max_output_tokens: int,
     ) -> LLMResponse:
+        del agent
         started = time.perf_counter()
         response = self._client.chat.completions.create(
             model=self.model,
@@ -85,7 +96,7 @@ class DashScopeQwenClient:
             max_tokens=max(64, max_output_tokens),
             response_format={"type": "json_object"},
             messages=[
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": _structured_system_prompt(system_prompt)},
                 {
                     "role": "user",
                     "content": json.dumps(payload, ensure_ascii=False, default=str),
@@ -122,7 +133,9 @@ def _normalize_qwen_content(parsed: Any) -> dict[str, Any]:
         if isinstance(value, (int, float)):
             probabilities[label] = float(value)
     if probabilities:
-        remaining = {key: value for key, value in parsed.items() if key not in TASK_LABELS}
+        remaining = {
+            key: value for key, value in parsed.items() if key not in TASK_LABELS
+        }
         remaining["probabilities"] = probabilities
         remaining.setdefault(
             "task_type", max(probabilities, key=probabilities.get)

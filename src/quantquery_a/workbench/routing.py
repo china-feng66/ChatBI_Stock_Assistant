@@ -30,10 +30,12 @@ INTENT_PROTOTYPES: tuple[tuple[str, TaskType], ...] = (
     ("评估交易成本后的回测表现", TaskType.BACKTEST),
     ("做历史模拟并对比基准", TaskType.BACKTEST),
     ("检查最大回撤和前视偏差", TaskType.RISK_DIAGNOSIS),
+    ("复核手续费滑点和未来数据", TaskType.RISK_DIAGNOSIS),
     ("诊断策略风险和异常交易", TaskType.RISK_DIAGNOSIS),
     ("比较几只股票哪个表现更好", TaskType.STOCK_COMPARISON),
     ("对比多个标的并进行排名", TaskType.STOCK_COMPARISON),
     ("构建价格成交量因子组合", TaskType.STOCK_COMPARISON),
+    ("用动量低波动流动性选择股票", TaskType.STOCK_COMPARISON),
     ("什么是夏普比率", TaskType.KNOWLEDGE_EXPLAIN),
     ("解释最大回撤的含义", TaskType.KNOWLEDGE_EXPLAIN),
     ("说明量化研究方法原理", TaskType.KNOWLEDGE_EXPLAIN),
@@ -41,6 +43,34 @@ INTENT_PROTOTYPES: tuple[tuple[str, TaskType], ...] = (
     ("连接实盘自动交易", TaskType.UNSUPPORTED),
     ("保证策略能够盈利", TaskType.UNSUPPORTED),
 )
+
+_AMBIGUOUS_REQUESTS = {
+    "帮我看看demo.sh",
+    "分析一下这个",
+    "这个策略怎么样",
+    "最近有什么变化",
+}
+
+
+def _normalize_text(query: str) -> str:
+    return "".join(query.lower().split())
+
+
+def _requires_clarification(query: str) -> bool:
+    return _normalize_text(query) in _AMBIGUOUS_REQUESTS
+
+
+def _is_unsafe_request(query: str) -> bool:
+    lowered = query.lower()
+    return (
+        "下单" in lowered
+        or "自动交易" in lowered
+        or ("实盘" in lowered and any(word in lowered for word in ("账户", "交易", "自动")))
+        or (
+            "保证" in lowered
+            and any(word in lowered for word in ("盈利", "收益", "赚钱"))
+        )
+    )
 
 
 def _normalize(values: Mapping[TaskType, float]) -> dict[TaskType, float]:
@@ -112,11 +142,26 @@ class HybridIntentRouter:
         ranked = sorted(combined.items(), key=lambda item: item[1], reverse=True)
         task, confidence = ranked[0]
         margin = confidence - ranked[1][1]
+
+        if _is_unsafe_request(request.query):
+            task = TaskType.UNSUPPORTED
+            confidence = 1.0
+            margin = 1.0
+            sources["safety_guard"] = {
+                candidate: float(candidate is TaskType.UNSUPPORTED)
+                for candidate in TaskType
+            }
+
         missing = []
         if task not in {TaskType.KNOWLEDGE_EXPLAIN, TaskType.UNSUPPORTED}:
             if not request.symbols:
                 missing.append("symbols")
-        if confidence < self.clarification_threshold or margin < self.margin_threshold:
+
+        if (
+            _requires_clarification(request.query)
+            or confidence < self.clarification_threshold
+            or margin < self.margin_threshold
+        ):
             path = RoutePath.CLARIFICATION
         elif task in {TaskType.MARKET_QUERY, TaskType.KNOWLEDGE_EXPLAIN}:
             path = RoutePath.FAST
@@ -138,4 +183,3 @@ class HybridIntentRouter:
             ],
             missing_fields=missing,
         )
-

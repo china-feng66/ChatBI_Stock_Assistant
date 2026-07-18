@@ -78,13 +78,18 @@ class WorkbenchService:
             if run_id in self._cancelled:
                 self._mark_cancelled(run_id)
                 return
+            existing_row = self.store.get_run_row(run_id)
+            existing_state = (
+                json.loads(existing_row["state_json"]) if existing_row else {}
+            )
+            prior_calls, prior_tokens = self._usage_totals(run_id)
             state: ResearchState = {
                 "run_id": run_id,
                 "request": request.model_dump(mode="json"),
                 "status": WorkbenchStatus.RUNNING.value,
-                "token_total": 0,
-                "llm_calls": 0,
-                "repair_count": 0,
+                "token_total": prior_tokens,
+                "llm_calls": prior_calls,
+                "repair_count": int(existing_state.get("repair_count", 0)),
                 "error": None,
             }
             self.store.update_run(
@@ -102,11 +107,13 @@ class WorkbenchService:
                 if run_id in self._cancelled:
                     self._mark_cancelled(run_id)
                     return
+                result = self._reconcile_usage(run_id, dict(result))
                 status = WorkbenchStatus(result.get("status", "error"))
-                self.store.update_run(run_id, status=status, state=dict(result))
+                self.store.update_run(run_id, status=status, state=result)
             except Exception as exc:
                 state["status"] = WorkbenchStatus.ERROR.value
                 state["error"] = type(exc).__name__
+                reconciled = self._reconcile_usage(run_id, dict(state))
                 self.store.append_event(
                     run_id,
                     event_type="run.failed",
@@ -116,7 +123,7 @@ class WorkbenchService:
                 self.store.update_run(
                     run_id,
                     status=WorkbenchStatus.ERROR,
-                    state=dict(state),
+                    state=reconciled,
                     error=type(exc).__name__,
                 )
 
@@ -135,16 +142,36 @@ class WorkbenchService:
         result = self._graph.invoke(
             initial, {"configurable": {"thread_id": run_id}}
         )
-        status = WorkbenchStatus(result.get("status", "error"))
-        self.store.update_run(run_id, status=status, state=dict(result))
+        reconciled = self._reconcile_usage(run_id, dict(result))
+        status = WorkbenchStatus(reconciled.get("status", "error"))
+        self.store.update_run(run_id, status=status, state=reconciled)
         return self.get_run(run_id)
+
+    def _usage_totals(self, run_id: str) -> tuple[int, int]:
+        with sqlite3.connect(self.database_path, timeout=10.0) as connection:
+            row = connection.execute(
+                "SELECT COUNT(*), COALESCE(SUM(total_tokens), 0) "
+                "FROM llm_usage WHERE run_id=?",
+                (run_id,),
+            ).fetchone()
+        return int(row[0]), int(row[1])
+
+    def _reconcile_usage(
+        self, run_id: str, state: dict[str, object]
+    ) -> dict[str, object]:
+        """Use the append-only usage ledger as the authoritative token counter."""
+
+        calls, tokens = self._usage_totals(run_id)
+        state["llm_calls"] = calls
+        state["token_total"] = tokens
+        return state
 
     def get_run(self, run_id: str) -> RunSnapshot:
         row = self.store.get_run_row(run_id)
         if not row:
             raise RunNotFoundError(run_id)
         request = RunCreateRequest.model_validate_json(row["request_json"])
-        state = json.loads(row["state_json"])
+        state = self._reconcile_usage(run_id, json.loads(row["state_json"]))
         return RunSnapshot(
             run_id=run_id,
             status=WorkbenchStatus(row["status"]),
@@ -192,9 +219,9 @@ class WorkbenchService:
             state={
                 "run_id": run_id,
                 "status": "queued",
-                "token_total": 0,
-                "llm_calls": 0,
-                "repair_count": 0,
+                "token_total": snapshot.token_total,
+                "llm_calls": snapshot.llm_calls,
+                "repair_count": snapshot.repair_count,
             },
         )
         self._tasks[run_id] = asyncio.create_task(
@@ -211,7 +238,7 @@ class WorkbenchService:
         row = self.store.get_run_row(run_id)
         if not row:
             return
-        state = json.loads(row["state_json"])
+        state = self._reconcile_usage(run_id, json.loads(row["state_json"]))
         state["status"] = WorkbenchStatus.CANCELLED.value
         self.store.append_event(
             run_id, event_type="run.cancelled", status="cancelled"
@@ -219,4 +246,3 @@ class WorkbenchService:
         self.store.update_run(
             run_id, status=WorkbenchStatus.CANCELLED, state=state
         )
-
