@@ -1,11 +1,11 @@
 import { useEffect, useRef } from "react";
 import * as echarts from "echarts/core";
-import { CandlestickChart, LineChart } from "echarts/charts";
+import { BarChart, CandlestickChart, LineChart } from "echarts/charts";
 import { GridComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsCoreOption } from "echarts/core";
 
-echarts.use([CandlestickChart, LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
+echarts.use([BarChart, CandlestickChart, LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
 
 interface ChartProps { option: unknown; ariaLabel: string; className?: string }
 

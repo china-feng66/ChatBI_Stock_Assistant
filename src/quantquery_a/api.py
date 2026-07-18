@@ -15,6 +15,10 @@ from quantquery_a.agents.contracts import AnalysisReport, AnalyzeRequest
 from quantquery_a.agents.supervisor import QuantSupervisor, build_default_supervisor
 from quantquery_a.evaluation import EvalSummary, EvaluationRunner, build_default_cases
 from quantquery_a.query import ReadOnlyQueryService
+from quantquery_a.workbench.benchmark import (
+    RoutingBenchmark,
+    RoutingBenchmarkSummary,
+)
 from quantquery_a.workbench.contracts import (
     RunCreateRequest,
     RunSnapshot,
@@ -22,11 +26,12 @@ from quantquery_a.workbench.contracts import (
     WeightCandidate,
 )
 from quantquery_a.workbench.market import MarketProviderError
+from quantquery_a.workbench.observability import ObservabilityService
 from quantquery_a.workbench.quality import QualityManager, WorkbenchEvalSummary
 from quantquery_a.workbench.service import RunNotFoundError, WorkbenchService
 
 
-API_VERSION = "0.3.0"
+API_VERSION = "0.4.0"
 TERMINAL_STATUSES = {
     "completed",
     "blocked",
@@ -49,6 +54,8 @@ def create_app(
         active_workbench.runtime_dir,
     )
     quality.apply_active(active_workbench)
+    observability = ObservabilityService(active_workbench.database_path)
+    routing_benchmark = RoutingBenchmark(active_workbench.database_path)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -69,6 +76,8 @@ def create_app(
     )
     app.state.workbench = active_workbench
     app.state.quality = quality
+    app.state.observability = observability
+    app.state.routing_benchmark = routing_benchmark
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
@@ -85,6 +94,7 @@ def create_app(
             "loop": "data-quant-risk",
             "workbench_loop": "planner-data-quant-risk-reporter",
             "llm_required": os.environ.get("QUANTQUERY_LLM_MODE", "fake") == "live",
+            "observability": "run-events-agent-metrics-communication-edges",
         }
 
     @app.post("/analyze", response_model=AnalysisReport)
@@ -125,6 +135,14 @@ def create_app(
             return active_workbench.get_run(run_id)
         except RunNotFoundError as exc:
             raise HTTPException(status_code=404, detail="run not found") from exc
+
+    @app.get("/api/v1/runs/{run_id}/observability")
+    def get_run_observability(run_id: str) -> dict[str, object]:
+        try:
+            snapshot = active_workbench.get_run(run_id)
+        except RunNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="run not found") from exc
+        return observability.run_detail(snapshot)
 
     @app.post("/api/v1/runs/{run_id}/cancel", response_model=RunSnapshot)
     def cancel_run(run_id: str) -> RunSnapshot:
@@ -229,8 +247,17 @@ def create_app(
     def metrics_summary() -> dict[str, object]:
         return active_workbench.store.metrics()
 
+    @app.get("/api/v1/metrics/observability")
+    def observability_summary() -> dict[str, object]:
+        return observability.system_summary()
+
     @app.post("/api/v1/evals/run", response_model=WorkbenchEvalSummary)
     def workbench_evaluation(live: bool = False) -> WorkbenchEvalSummary:
+        if live and active_workbench.llm.model == "fake-qwen":
+            raise HTTPException(
+                status_code=409,
+                detail="restart the server with QUANTQUERY_LLM_MODE=live",
+            )
         try:
             return quality.evaluate(live=live)
         except Exception as exc:
@@ -238,6 +265,28 @@ def create_app(
                 status_code=500,
                 detail="workbench evaluation could not be completed",
             ) from exc
+
+    @app.post(
+        "/api/v1/evals/routing",
+        response_model=RoutingBenchmarkSummary,
+    )
+    def routing_evaluation(live: bool = False) -> RoutingBenchmarkSummary:
+        if live and active_workbench.llm.model == "fake-qwen":
+            raise HTTPException(
+                status_code=409,
+                detail="restart the server with QUANTQUERY_LLM_MODE=live",
+            )
+        return routing_benchmark.run(
+            live=live,
+            client=active_workbench.llm if live else None,
+        )
+
+    @app.get(
+        "/api/v1/evals/routing/latest",
+        response_model=RoutingBenchmarkSummary | None,
+    )
+    def latest_routing_evaluation() -> RoutingBenchmarkSummary | None:
+        return routing_benchmark.latest()
 
     @app.get(
         "/api/v1/router/weight-candidates",

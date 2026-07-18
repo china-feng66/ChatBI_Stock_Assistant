@@ -11,6 +11,17 @@ from typing import Any, Protocol
 from openai import OpenAI
 
 
+TASK_LABELS = (
+    "market_query",
+    "strategy_analysis",
+    "backtest",
+    "risk_diagnosis",
+    "stock_comparison",
+    "knowledge_explain",
+    "unsupported",
+)
+
+
 @dataclass(frozen=True)
 class LLMUsage:
     prompt_tokens: int
@@ -82,11 +93,10 @@ class DashScopeQwenClient:
             ],
         )
         elapsed = (time.perf_counter() - started) * 1_000
-        message = response.choices[0].message.content or "{}"
-        parsed = json.loads(message)
+        parsed = json.loads(response.choices[0].message.content or "{}")
         usage = response.usage
         return LLMResponse(
-            content=parsed if isinstance(parsed, dict) else {"result": parsed},
+            content=_normalize_qwen_content(parsed),
             model=self.model,
             usage=LLMUsage(
                 prompt_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
@@ -97,6 +107,28 @@ class DashScopeQwenClient:
                 latency_ms=elapsed,
             ),
         )
+
+
+def _normalize_qwen_content(parsed: Any) -> dict[str, Any]:
+    """Accept both nested and top-level probability JSON from Qwen."""
+
+    if not isinstance(parsed, dict):
+        return {"result": parsed}
+    if isinstance(parsed.get("probabilities"), dict):
+        return parsed
+    probabilities: dict[str, float] = {}
+    for label in TASK_LABELS:
+        value = parsed.get(label)
+        if isinstance(value, (int, float)):
+            probabilities[label] = float(value)
+    if probabilities:
+        remaining = {key: value for key, value in parsed.items() if key not in TASK_LABELS}
+        remaining["probabilities"] = probabilities
+        remaining.setdefault(
+            "task_type", max(probabilities, key=probabilities.get)
+        )
+        return remaining
+    return parsed
 
 
 class FakeQwenClient:
@@ -116,20 +148,23 @@ class FakeQwenClient:
         started = time.perf_counter()
         query = str(payload.get("query", "")).lower()
         if agent == "planner":
-            task = "market_query"
-            if "因子" in query or "组合" in query:
-                task = "stock_comparison"
-            elif "回测" in query or "backtest" in query:
-                task = "backtest"
-            elif "布林" in query or "bollinger" in query:
-                task = "strategy_analysis"
-            elif "风险" in query or "回撤" in query:
-                task = "risk_diagnosis"
-            elif "解释" in query or "什么是" in query:
-                task = "knowledge_explain"
+            task = _fake_task(query)
+            probabilities = {
+                item: (0.9 if item == task else 0.1 / 6) for item in TASK_LABELS
+            }
+            if _is_ambiguous(query):
+                probabilities = {
+                    "market_query": 0.24,
+                    "strategy_analysis": 0.22,
+                    "backtest": 0.14,
+                    "risk_diagnosis": 0.10,
+                    "stock_comparison": 0.15,
+                    "knowledge_explain": 0.10,
+                    "unsupported": 0.05,
+                }
             content = {
                 "task_type": task,
-                "probabilities": {task: 0.9, "market_query": 0.1},
+                "probabilities": probabilities,
                 "steps": ["collect_evidence", "run_tool", "risk_review"],
             }
         elif agent == "data":
@@ -172,9 +207,33 @@ class FakeQwenClient:
         )
 
 
+def _fake_task(query: str) -> str:
+    if any(word in query for word in ("下单", "实盘", "保证", "auto trade")):
+        return "unsupported"
+    if any(word in query for word in ("因子", "组合", "比较", "排序", "哪个更好", "top5")):
+        return "stock_comparison"
+    if any(word in query for word in ("回测", "历史模拟", "过去一年", "backtest")):
+        return "backtest"
+    if any(word in query for word in ("风险", "回撤", "前视", "滑点", "复权", "遗漏")):
+        return "risk_diagnosis"
+    if any(word in query for word in ("什么是", "解释", "为什么", "原理", "含义")):
+        return "knowledge_explain"
+    if any(word in query for word in ("macd", "布林", "信号", "入场", "离场")):
+        return "strategy_analysis"
+    return "market_query"
+
+
+def _is_ambiguous(query: str) -> bool:
+    return query.strip() in {
+        "帮我看看 demo.sh",
+        "分析一下这个",
+        "这个策略怎么样",
+        "最近有什么变化",
+    }
+
+
 def build_qwen_client() -> QwenClient:
     mode = os.environ.get("QUANTQUERY_LLM_MODE", "fake").strip().lower()
     if mode == "live":
         return DashScopeQwenClient()
     return FakeQwenClient()
-

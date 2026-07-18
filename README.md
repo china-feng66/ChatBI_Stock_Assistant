@@ -19,9 +19,10 @@ QuantQuery-A 是一个面向 AI Agent 工程与量化开发实习面试的本地
 - MACD、布林带、标的比较、价格成交量三因子组合。
 - T 日收盘信号、下一交易日开盘成交，支持整手、佣金、最低佣金、税费和滑点。
 - 因子 5%/95% 缩尾、Z-score、等权合成、周频 Top 5 只做多，以及 70/30 时间切分报告。
-- React + TypeScript + TanStack Query + ECharts 四个页面：工作台、行情、实验室、监控。
+- React + TypeScript + TanStack Query + ECharts：工作台、行情、实验室、监控和 Agent 可观测控制室。
+- 逐任务通信拓扑、事件时间线、逐 Agent token/延迟/错误、门禁和路由标注集面板。
 - HTML、CSV、JSON 导出；任务取消、恢复、历史记录和实时 Agent 事件。
-- 20 条冻结路由集、8 条端到端评测、候选路由权重生成与人工发布。
+- 34 条路由与澄清标注集、8 条端到端评测、候选路由权重生成与人工发布。
 
 ## 架构
 
@@ -36,9 +37,10 @@ flowchart LR
     D --> M["Tushare / AKShare / SQLite cache"]
     Q --> T["确定性量化工具"]
     G --> C["SQLite WAL + checkpoints"]
+    C --> O["通信 / token / 延迟 / 门禁看板"]
 ```
 
-详见 [架构说明](docs/ARCHITECTURE.md)、[产品需求](docs/WORKBENCH_PRD.md) 和 [课程来源与个人贡献](docs/ORIGIN.md)。
+详见 [架构说明](docs/ARCHITECTURE.md)、[评测记录](docs/EVALUATION_REPORT.md)、[产品需求](docs/WORKBENCH_PRD.md) 和 [课程来源与个人贡献](docs/ORIGIN.md)。
 
 ## 本地运行
 
@@ -54,7 +56,7 @@ $env:PYTHONPATH="src"
 python -m uvicorn quantquery_a.api:app --host 127.0.0.1 --port 8000
 ```
 
-打开 `http://127.0.0.1:8000/`。也可以运行：
+打开 `http://127.0.0.1:8000/`；Agent 看板位于 `http://127.0.0.1:8000/#observability`。也可以运行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/start_workbench.ps1
@@ -88,17 +90,21 @@ npm run build
 
 保留：`GET /healthz`、`POST /analyze`、`POST /eval/run`。
 
-新增：
+核心新增接口：
 
 - `POST/GET /api/v1/runs`
 - `GET /api/v1/runs/{run_id}`
+- `GET /api/v1/runs/{run_id}/observability`
 - `POST /api/v1/runs/{run_id}/cancel|resume`
 - `WS /api/v1/runs/{run_id}/events`
 - `GET/POST /api/v1/watchlist`
 - `GET /api/v1/market/{symbol}/daily|minute`
 - `WS /api/v1/market/stream`
 - `GET /api/v1/metrics/summary`
+- `GET /api/v1/metrics/observability`
 - `POST /api/v1/evals/run`
+- `POST /api/v1/evals/routing`
+- `GET /api/v1/evals/routing/latest`
 - `GET/POST /api/v1/router/weight-candidates`
 
 ## 数据与安全边界
